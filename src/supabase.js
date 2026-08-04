@@ -94,6 +94,49 @@ export async function loadVotesToday() {
   return count || 0;
 }
 
+export async function loadVoteMonitoring() {
+  requireSupabase();
+  const [votesResult, tenants] = await Promise.all([
+    supabase.from('votes').select('id, tenant_id, voted_at, voted_date').order('voted_date', { ascending: false }),
+    loadTenants(),
+  ]);
+
+  const { data: votes, error } = votesResult;
+  if (error) throw new Error(formatSupabaseError(error));
+
+  const dailyStats = new Map();
+  const tenantTotals = new Map();
+  const tenantLookup = new Map(tenants.map((tenant) => [tenant.id, tenant]));
+
+  for (const vote of votes || []) {
+    const votedDate = String(vote.voted_date || vote.voted_at || '').slice(0, 10);
+    if (votedDate) {
+      dailyStats.set(votedDate, (dailyStats.get(votedDate) || 0) + 1);
+    }
+
+    if (vote.tenant_id) {
+      tenantTotals.set(vote.tenant_id, (tenantTotals.get(vote.tenant_id) || 0) + 1);
+    }
+  }
+
+  const tenantSummary = [...tenantTotals.entries()]
+    .map(([tenantId, count]) => ({
+      tenantId,
+      name: tenantLookup.get(tenantId)?.name || 'Tenant tidak diketahui',
+      terminal: tenantLookup.get(tenantId)?.terminal || '—',
+      count,
+    }))
+    .sort((left, right) => right.count - left.count || left.name.localeCompare(right.name));
+
+  return {
+    dailyStats: [...dailyStats.entries()]
+      .sort((left, right) => right[0].localeCompare(left[0]))
+      .map(([date, count]) => ({ date, count })),
+    topTenant: tenantSummary[0] || null,
+    tenantTotals: tenantSummary,
+  };
+}
+
 export async function updateUserRole(id, role) {
   requireSupabase();
   if (!['admin', 'visitor'].includes(role)) {

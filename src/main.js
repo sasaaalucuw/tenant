@@ -13,6 +13,11 @@ app.mount({
   users: [],
   votes: [],
   votesToday: 0,
+  voteMonitoring: {
+    dailyStats: [],
+    topTenant: null,
+    tenantTotals: [],
+  },
   filter: '',
   terminalFilter: null,
   editing: null,

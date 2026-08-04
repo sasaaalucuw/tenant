@@ -10,6 +10,7 @@ import {
   loadUserVotes,
   loadUsers,
   loadVotesToday,
+  loadVoteMonitoring,
   createTenant,
   updateTenant,
   updateUserRole,
@@ -58,7 +59,22 @@ function renderHeader(user) {
 }
 
 export function render(state, { setState }) {
-  const { view, email, user, tenants = [], users = [], votes = [], votesToday = 0, filter = '', terminalFilter = null, editing, form, message, activeAdminPanel = 'users' } = state;
+  const {
+    view,
+    email,
+    user,
+    tenants = [],
+    users = [],
+    votes = [],
+    votesToday = 0,
+    voteMonitoring = { dailyStats: [], topTenant: null, tenantTotals: [] },
+    filter = '',
+    terminalFilter = null,
+    editing,
+    form,
+    message,
+    activeAdminPanel = 'users',
+  } = state;
 
   const votedToday = hasVotedToday(votes);
   const voteNotice = votedToday
@@ -74,6 +90,9 @@ export function render(state, { setState }) {
   const totalUsers = users.length;
   const totalVotesToday = votesToday;
   const isCurrentAdmin = user?.role === 'admin';
+  const monitoringTopTenant = voteMonitoring.topTenant;
+  const monitoringDailyStats = voteMonitoring.dailyStats || [];
+  const monitoringTenantTotals = voteMonitoring.tenantTotals || [];
 
   const loginSection = html`
     <section class="login-card">
@@ -189,6 +208,69 @@ export function render(state, { setState }) {
     </div>
   `;
 
+  const monitoringPanel = html`
+    <div class="admin-panel-box">
+      <div class="panel-toolbar">
+        <div>
+          <h3>Monitoring Vote</h3>
+          <p>Lihat perkembangan voting harian dan data per tenant dari tabel vote yang sudah ada.</p>
+        </div>
+        <span class="toolbar-count">Total Vote: ${totalVotesToday}</span>
+      </div>
+
+      <div class="monitoring-grid">
+        <div class="monitoring-card">
+          <span>Tenant Paling Banyak Vote</span>
+          <strong>${monitoringTopTenant ? monitoringTopTenant.name : 'Belum ada vote'}</strong>
+          <small>${monitoringTopTenant ? `${monitoringTopTenant.count} suara` : '0 suara'}</small>
+        </div>
+        <div class="monitoring-card">
+          <span>Vote Hari Ini</span>
+          <strong>${totalVotesToday}</strong>
+          <small>menggunakan data tanggal vote saat ini</small>
+        </div>
+      </div>
+
+      <div class="monitoring-layout">
+        <div class="monitoring-list-box">
+          <h3>Vote per Hari</h3>
+          <div class="monitoring-list">
+            ${monitoringDailyStats.length
+              ? monitoringDailyStats
+                  .map(
+                    (item) => `
+                      <div class="monitoring-item">
+                        <span>${new Date(`${item.date}T00:00:00`).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
+                        <strong>${item.count}</strong>
+                      </div>
+                    `,
+                  )
+                  .join('')
+              : '<p class="empty">Belum ada data vote harian.</p>'}
+          </div>
+        </div>
+
+        <div class="monitoring-list-box">
+          <h3>Total Vote per Tenant</h3>
+          <div class="monitoring-list">
+            ${monitoringTenantTotals.length
+              ? monitoringTenantTotals
+                  .map(
+                    (item) => `
+                      <div class="monitoring-item">
+                        <span>${item.name} • ${item.terminal}</span>
+                        <strong>${item.count}</strong>
+                      </div>
+                    `,
+                  )
+                  .join('')
+              : '<p class="empty">Belum ada tenant yang menerima vote.</p>'}
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+
   const adminSection = html`
     <section class="panel admin-panel">
       <div class="panel-header">
@@ -205,6 +287,7 @@ export function render(state, { setState }) {
           <button class="admin-menu-item ${activeAdminPanel === 'dashboard' ? 'active' : ''}" data-action="set-admin-panel" data-payload='${JSON.stringify({ panel: 'dashboard' })}'>Ringkasan</button>
           <button class="admin-menu-item ${activeAdminPanel === 'users' ? 'active' : ''}" data-action="set-admin-panel" data-payload='${JSON.stringify({ panel: 'users' })}'>Kelola Pengguna <span>${totalUsers}</span></button>
           <button class="admin-menu-item ${activeAdminPanel === 'tenants' ? 'active' : ''}" data-action="set-admin-panel" data-payload='${JSON.stringify({ panel: 'tenants' })}'>Kelola Tenant <span>${totalTenants}</span></button>
+          <button class="admin-menu-item ${activeAdminPanel === 'monitoring' ? 'active' : ''}" data-action="set-admin-panel" data-payload='${JSON.stringify({ panel: 'monitoring' })}'>Monitoring Vote <span>${totalVotesToday}</span></button>
         </aside>
 
         <div class="admin-content">
@@ -226,7 +309,7 @@ export function render(state, { setState }) {
             ? html`
                 <div class="admin-panel-box admin-summary-box">
                   <h3>Ringkasan Kontrol</h3>
-                  <p>Pilih menu di samping untuk melihat detail pengguna atau tenant.</p>
+                  <p>Pilih menu di samping untuk melihat detail pengguna, tenant, atau monitoring vote.</p>
                   <div class="summary-grid">
                     <div><strong>${totalUsers}</strong><span>Pengguna aktif</span></div>
                     <div><strong>${totalTenants}</strong><span>Tenant tersedia</span></div>
@@ -236,6 +319,8 @@ export function render(state, { setState }) {
               `
             : activeAdminPanel === 'users'
             ? userPanel
+            : activeAdminPanel === 'monitoring'
+            ? monitoringPanel
             : tenantPanel}
         </div>
       </div>
@@ -315,7 +400,8 @@ export async function attachAppActions(app) {
       const users = await loadUsers();
       const votes = state.user ? await loadUserVotes(state.user.email) : [];
       const votesToday = await loadVotesToday();
-      app.setState({ tenants, users, votes, votesToday });
+      const voteMonitoring = await loadVoteMonitoring();
+      app.setState({ tenants, users, votes, votesToday, voteMonitoring });
     }
 
     switch (action) {
